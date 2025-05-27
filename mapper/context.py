@@ -3,6 +3,11 @@ from datafusion.expr import lit, col
 import pandas as pd
 import os
 from typing import List, Dict, Any, Optional
+from rich.console import Console
+
+from mapper.chunking import chunk_cable, CableChunk
+
+console = Console()
 
 class CablesContext:
     """Context for working with diplomatic cables data using DataFusion."""
@@ -17,6 +22,7 @@ class CablesContext:
         """
         self.ctx = SessionContext()
         self.data_path = data_path
+        self.cables_df = None
         
         # Define the schema for cables
         self.schema = {
@@ -50,9 +56,12 @@ class CablesContext:
             df.columns = ["id", "date", "reference_number", "source", 
                           "classification", "references", "header", "content"]
             
+            # Store the dataframe
+            self.cables_df = df
+            
             # Register the dataframe with DataFusion
             self.ctx.register_dataframe("cables", df)
-            print(f"Loaded {len(df)} cables from {path}")
+            console.print(f"Loaded {len(df)} cables from {path}", style="bold green")
         else:
             raise ValueError(f"CSV file {path} does not have the expected number of columns")
     
@@ -132,3 +141,43 @@ class CablesContext:
         """
         
         return self.execute_query(query)
+    
+    def chunk_all_cables(self, chunk_size: int = 1000) -> List[CableChunk]:
+        """
+        Split all cables into chunks for embedding generation.
+        
+        Args:
+            chunk_size: Target size for each chunk in characters
+            
+        Returns:
+            List of CableChunk objects
+        """
+        if self.cables_df is None:
+            raise ValueError("No cables data loaded. Call load_data() first.")
+        
+        all_chunks = []
+        
+        with console.status("[bold green]Chunking cables...") as status:
+            for _, row in self.cables_df.iterrows():
+                # Extract metadata
+                metadata = {
+                    "date": row["date"],
+                    "source": row["source"],
+                    "classification": row["classification"]
+                }
+                
+                # Chunk the cable
+                chunks = chunk_cable(
+                    cable_id=row["id"],
+                    content=row["content"],
+                    chunk_size=chunk_size,
+                    metadata=metadata
+                )
+                
+                all_chunks.extend(chunks)
+                
+                # Update status message
+                status.update(f"[bold green]Chunked cable {row['id']} into {len(chunks)} chunks")
+        
+        console.print(f"Created {len(all_chunks)} chunks from {len(self.cables_df)} cables", style="bold green")
+        return all_chunks
