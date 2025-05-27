@@ -12,6 +12,7 @@ from rich.console import Console
 
 from mapper.context import CablesContext
 from mapper.embeddings import EmbeddingModel
+from mapper.visualization import load_embeddings, create_tsne_plot
 
 console = Console()
 
@@ -93,11 +94,38 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
         help="Batch size for embedding generation (default: 8)"
     )
     
+    # Visualization options
+    viz_group = parser.add_argument_group("Visualization Options")
+    viz_group.add_argument(
+        "--visualize",
+        action="store_true",
+        help="Visualize embeddings using t-SNE"
+    )
+    
+    viz_group.add_argument(
+        "--embeddings-file",
+        help="Path to the embeddings pickle file for visualization"
+    )
+    
+    viz_group.add_argument(
+        "--perplexity",
+        type=int,
+        default=30,
+        help="Perplexity parameter for t-SNE (default: 30)"
+    )
+    
+    viz_group.add_argument(
+        "--iterations",
+        type=int,
+        default=1000,
+        help="Number of iterations for t-SNE (default: 1000)"
+    )
+    
     # Output options
     output_group = parser.add_argument_group("Output Options")
     output_group.add_argument(
         "--output", "-o",
-        help="Output file path. For embeddings, this will be a pickle file."
+        help="Output file path. For embeddings, this will be a pickle file. For visualization, this will be a PNG file."
     )
     
     output_group.add_argument(
@@ -114,12 +142,32 @@ def main(args: Optional[List[str]] = None) -> int:
     """Main entry point for the CLI."""
     parsed_args = parse_args(args)
     
-    # Check if the CSV file exists
-    if not os.path.exists(parsed_args.csv_file):
-        console.print(f"Error: CSV file '{parsed_args.csv_file}' not found", style="bold red")
-        return 1
-    
     try:
+        # Handle visualization if requested
+        if parsed_args.visualize:
+            if not parsed_args.embeddings_file:
+                console.print("Error: --embeddings-file is required for visualization", style="bold red")
+                return 1
+                
+            # Load embeddings
+            df = load_embeddings(parsed_args.embeddings_file)
+            
+            # Create t-SNE plot
+            create_tsne_plot(
+                df=df,
+                output_path=parsed_args.output,
+                perplexity=parsed_args.perplexity,
+                n_iter=parsed_args.iterations,
+                title="t-SNE Visualization of Cable Embeddings"
+            )
+            
+            return 0
+        
+        # Check if the CSV file exists for other operations
+        if not os.path.exists(parsed_args.csv_file):
+            console.print(f"Error: CSV file '{parsed_args.csv_file}' not found", style="bold red")
+            return 1
+            
         # Initialize the context with the CSV file
         context = CablesContext(parsed_args.csv_file)
         
